@@ -1,0 +1,37 @@
+openapi: 3.0.0
+
+info:
+  title: JengaMart API
+  description: Backend API for construction materials e-commerce platform
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5000/api
+    description: Local development server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Auth
+    description: Authentication endpoints
+  - name: Products
+    description: Product management
+  - name: Orders
+    description: Order processing
+
+paths:
+  /health:
+    get:
+      summary: API health check
+      tags: [Health]
+      responses:
+        200:
+          description: API is running
