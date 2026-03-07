@@ -8,18 +8,35 @@ const swaggerSetup = require("./config/swagger");
 
 const app = express();
 
-// Global middlewares
-app.use(cors());
-app.use(express.json());
-app.use(morgan("dev"));
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  process.env.FRONTEND_URL
+].filter(Boolean);
 
-// Swagger docs
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (Postman, curl, mobile apps, server-to-server)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("CORS not allowed for this origin"));
+    },
+    credentials: true
+  })
+);
+
+app.use(express.json());
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+
 swaggerSetup(app);
 
-// API routes
 app.use("/api", routes);
 
-// Error handler (must be last)
 app.use(errorHandler);
 
 module.exports = app;
