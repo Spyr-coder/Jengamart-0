@@ -35,6 +35,14 @@ app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
 swaggerSetup(app);
 
+// Health check
+app.get("/", (req, res) => {
+  res.json({
+    message: "Jengamart API is running 🚀",
+    docs: "/docs"
+  });
+});
+
 app.use("/api", routes);
 
 app.use(errorHandler);
