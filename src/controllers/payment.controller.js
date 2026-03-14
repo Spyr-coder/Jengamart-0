@@ -2,11 +2,13 @@ const prisma = require("../config/prisma");
 const asyncHandler = require("../utils/asyncHandler");
 const ApiError = require("../utils/apiError");
 const {
-  initiateMpesaPayment,
-  confirmMpesaPayment
+  initiateFlutterwavePayment,
+  handleFlutterwaveWebhook,
+  confirmFlutterwavePayment,
+  getPaymentById
 } = require("../services/payment.service");
 
-exports.payWithMpesa = asyncHandler(async (req, res) => {
+exports.initiatePayment = asyncHandler(async (req, res) => {
   const { orderId, phone } = req.body;
 
   const order = await prisma.order.findUnique({
@@ -21,49 +23,56 @@ exports.payWithMpesa = asyncHandler(async (req, res) => {
     throw new ApiError(403, "Forbidden");
   }
 
-  const result = await initiateMpesaPayment({
+  const result = await initiateFlutterwavePayment({
     order,
-    userId: req.user.id,
+    user: req.user,
     phone
   });
 
   res.status(200).json({
     success: true,
-    message: "STK push sent successfully",
+    message: "Payment initiated successfully",
     ...result
   });
 });
 
-exports.mpesaCallback = asyncHandler(async (req, res) => {
-  const callback = req.body?.Body?.stkCallback;
+exports.flutterwaveCallback = asyncHandler(async (req, res) => {
+  // Optional redirect verification endpoint for frontend/server use.
+  // Flutterwave redirects users here/there after checkout, but webhook remains the source of truth.
+  const transactionId = req.query.transaction_id;
 
-  if (!callback) {
-    throw new ApiError(400, "Invalid M-Pesa callback payload");
+  if (!transactionId) {
+    throw new ApiError(400, "Missing transaction_id");
   }
 
-  const checkoutRequestId = callback.CheckoutRequestID;
-  const resultCode = callback.ResultCode;
-  const resultDesc = callback.ResultDesc;
+  const result = await confirmFlutterwavePayment({ transactionId });
 
-  let mpesaReceiptNumber = null;
+  res.status(200).json({
+    success: true,
+    message: result.success ? "Payment verified successfully" : "Payment verification failed",
+    ...result
+  });
+});
 
-  const metadataItems = callback.CallbackMetadata?.Item || [];
-  for (const item of metadataItems) {
-    if (item.Name === "MpesaReceiptNumber") {
-      mpesaReceiptNumber = item.Value;
-    }
-  }
-
-  const result = await confirmMpesaPayment({
-    checkoutRequestId,
-    mpesaReceiptNumber,
-    resultCode,
-    resultDesc
+exports.flutterwaveWebhook = asyncHandler(async (req, res) => {
+  await handleFlutterwaveWebhook({
+    payload: req.body,
+    headers: req.headers
   });
 
   res.status(200).json({
-    ResultCode: 0,
-    ResultDesc: "Accepted",
-    paymentProcessed: result.success
+    status: "success"
+  });
+});
+
+exports.getPayment = asyncHandler(async (req, res) => {
+  const payment = await getPaymentById({
+    paymentId: req.params.id,
+    user: req.user
+  });
+
+  res.status(200).json({
+    success: true,
+    payment
   });
 });

@@ -1,13 +1,15 @@
 openapi: 3.0.0
 
 info:
-  title: JengaMart API
-  description: Backend API for construction materials e-commerce platform
+  title: Fundimart API
+  description: Backend API for the Fundimart construction materials marketplace
   version: 1.0.0
 
 servers:
   - url: http://localhost:5000/api
     description: Local development server
+  - url: https://your-render-service.onrender.com/api
+    description: Production server
 
 components:
   securitySchemes:
@@ -20,36 +22,51 @@ security:
   - BearerAuth: []
 
 tags:
+  - name: Health
+    description: API health endpoints
   - name: Auth
     description: Authentication endpoints
   - name: Products
     description: Product management
   - name: Orders
     description: Order processing
+  - name: Payments
+    description: Payment processing
+  - name: Admin
+    description: Administrative endpoints
 
 paths:
   /health:
     get:
       summary: API health check
       tags: [Health]
+      security: []
       responses:
         200:
           description: API is running
+
   /auth/register:
     post:
       summary: Register a new user
       tags: [Auth]
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name, email, password]
+              required:
+                - name
+                - email
+                - password
               properties:
-                name: { type: string }
-                email: { type: string }
-                password: { type: string }
+                name:
+                  type: string
+                email:
+                  type: string
+                password:
+                  type: string
       responses:
         201:
           description: User registered successfully
@@ -58,16 +75,21 @@ paths:
     post:
       summary: Login user
       tags: [Auth]
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [email, password]
+              required:
+                - email
+                - password
               properties:
-                email: { type: string }
-                password: { type: string }
+                email:
+                  type: string
+                password:
+                  type: string
       responses:
         200:
           description: Login successful
@@ -76,19 +98,28 @@ paths:
     get:
       summary: Get products (supports pagination, search, category filter)
       tags: [Products]
+      security: []
       parameters:
         - in: query
           name: page
-          schema: { type: integer, example: 1 }
+          schema:
+            type: integer
+            example: 1
         - in: query
           name: limit
-          schema: { type: integer, example: 12 }
+          schema:
+            type: integer
+            example: 12
         - in: query
           name: search
-          schema: { type: string, example: cement }
+          schema:
+            type: string
+            example: cement
         - in: query
           name: category
-          schema: { type: string, example: cement }
+          schema:
+            type: string
+            example: cement
       responses:
         200:
           description: Products returned
@@ -104,14 +135,24 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, price, unit, stock]
+              required:
+                - name
+                - price
+                - unit
+                - stock
               properties:
-                name: { type: string }
-                price: { type: number }
-                unit: { type: string }
-                stock: { type: integer }
-                category: { type: string }
-                description: { type: string }
+                name:
+                  type: string
+                price:
+                  type: number
+                unit:
+                  type: string
+                stock:
+                  type: integer
+                category:
+                  type: string
+                description:
+                  type: string
       responses:
         201:
           description: Product created
@@ -120,19 +161,81 @@ paths:
     get:
       summary: Get a single product by ID
       tags: [Products]
+      security: []
       parameters:
         - in: path
           name: id
           required: true
-          schema: { type: string }
+          schema:
+            type: string
       responses:
         200:
           description: Product returned
         404:
           description: Product not found
-            /payments/mpesa:
+
+  /orders:
     post:
-      summary: Initiate M-Pesa payment (placeholder)
+      summary: Create order
+      tags: [Orders]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - items
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - productId
+                      - quantity
+                    properties:
+                      productId:
+                        type: string
+                      quantity:
+                        type: integer
+      responses:
+        201:
+          description: Order created
+
+    get:
+      summary: Get logged-in user's orders
+      tags: [Orders]
+      security:
+        - BearerAuth: []
+      responses:
+        200:
+          description: Orders returned
+
+  /orders/{id}:
+    get:
+      summary: Get a single order by ID
+      tags: [Orders]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Order returned
+        404:
+          description: Order not found
+
+  /payments/initiate:
+    post:
+      summary: Initiate Flutterwave payment
+      description: Creates a Flutterwave hosted payment link for an order in KES.
       tags: [Payments]
       security:
         - BearerAuth: []
@@ -142,31 +245,83 @@ paths:
           application/json:
             schema:
               type: object
-              required: [orderId, phone]
+              required:
+                - orderId
+                - phone
               properties:
-                orderId: { type: string }
-                phone: { type: string, example: "2547XXXXXXXX" }
+                orderId:
+                  type: string
+                phone:
+                  type: string
+                  example: "254712345678"
       responses:
         200:
-          description: Payment initiated
+          description: Payment initiated successfully
+        400:
+          description: Invalid request or order cannot be paid
+        403:
+          description: Forbidden
+        404:
+          description: Order not found
 
-  /payments/mpesa/callback:
+  /payments/callback:
     post:
-      summary: Payment callback (webhook simulation)
+      summary: Flutterwave webhook callback
+      description: Flutterwave sends payment event notifications to this endpoint.
       tags: [Payments]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [paymentId, receiptNumber]
-              properties:
-                paymentId: { type: string }
-                receiptNumber: { type: string }
+      security: []
       responses:
         200:
-          description: Payment confirmed
+          description: Webhook received successfully
+        401:
+          description: Invalid webhook signature
+
+    get:
+      summary: Verify Flutterwave payment after redirect
+      description: Optional endpoint for verifying a transaction after Flutterwave redirects the user back.
+      tags: [Payments]
+      security: []
+      parameters:
+        - in: query
+          name: transaction_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: tx_ref
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+      responses:
+        200:
+          description: Payment verification processed
+        400:
+          description: Missing or invalid transaction ID
+
+  /payments/{id}:
+    get:
+      summary: Get payment by ID
+      tags: [Payments]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Payment returned
+        403:
+          description: Forbidden
+        404:
+          description: Payment not found
 
   /admin/orders:
     get:
@@ -188,14 +343,16 @@ paths:
         - in: path
           name: id
           required: true
-          schema: { type: string }
+          schema:
+            type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [status]
+              required:
+                - status
               properties:
                 status:
                   type: string

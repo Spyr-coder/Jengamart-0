@@ -20,7 +20,7 @@ try {
 }
 
 router.get("/health", (req, res) => {
-  res.status(200).json({ success: true, message: "JengaMart API running" });
+  res.status(200).json({ success: true, message: "FundiMart API running" });
 });
 
 // Debug prints (TEMPORARY) — helps confirm exports are correct

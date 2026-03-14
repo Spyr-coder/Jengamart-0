@@ -1,8 +1,40 @@
+const axios = require("axios");
 const prisma = require("../config/prisma");
 const ApiError = require("../utils/apiError");
-const { initiateStkPush } = require("./daraja.service");
 
-const initiateMpesaPayment = async ({ order, userId, phone }) => {
+const FLW_BASE_URL = "https://api.flutterwave.com/v3";
+const FLW_SECRET_KEY = process.env.FLW_SECRET_KEY;
+const FLW_SECRET_HASH = process.env.FLW_SECRET_HASH || process.env.FLW_SECRET_KEY_HASH;
+
+const flutterwave = axios.create({
+  baseURL: FLW_BASE_URL,
+  timeout: 30000,
+  headers: {
+    Authorization: `Bearer ${FLW_SECRET_KEY}`,
+    "Content-Type": "application/json"
+  }
+});
+
+const normalizePhone = (phone) => {
+  if (!phone) return null;
+
+  let p = String(phone).trim().replace(/\s+/g, "");
+
+  if (p.startsWith("+")) p = p.slice(1);
+  if (p.startsWith("0")) p = `254${p.slice(1)}`;
+
+  if (!/^254\d{9}$/.test(p)) {
+    throw new ApiError(400, "Invalid phone number format");
+  }
+
+  return p;
+};
+
+const buildTxRef = (orderId) => {
+  return `FUNDIMART-${orderId}-${Date.now()}`;
+};
+
+const initiateFlutterwavePayment = async ({ order, user, phone }) => {
   if (order.status !== "PENDING") {
     throw new ApiError(400, `Order cannot be paid. Current status: ${order.status}`);
   }
@@ -15,74 +47,139 @@ const initiateMpesaPayment = async ({ order, userId, phone }) => {
     throw new ApiError(400, "This order is already paid");
   }
 
+  const normalizedPhone = normalizePhone(phone);
+  const txRef = existingPayment?.gatewayReference || buildTxRef(order.id);
+
   const payment =
     existingPayment ||
     (await prisma.payment.create({
       data: {
         orderId: order.id,
-        userId,
+        userId: user.id,
         amount: order.subtotal,
-        method: "MPESA",
-        phone,
-        status: "INITIATED"
+        method: "FLUTTERWAVE",
+        phone: normalizedPhone,
+        status: "INITIATED",
+        gatewayReference: txRef
       }
     }));
 
-  const stkResponse = await initiateStkPush({
-    phone,
-    amount: order.subtotal,
-    accountReference: `Fundimart-${order.id.slice(0, 8)}`,
-    transactionDesc: `Payment for order ${order.id.slice(0, 8)}`
-  });
+  try {
+    const payload = {
+      tx_ref: txRef,
+      amount: order.subtotal,
+      currency: "KES",
+      redirect_url: `${process.env.FRONTEND_URL.replace(/\/$/, "")}/payment/callback`,
+      customer: {
+        email: user.email,
+        name: user.name,
+        phonenumber: normalizedPhone
+      },
+      customizations: {
+        title: "Fundimart",
+        description: `Payment for order ${order.id.slice(0, 8)}`,
+        logo: `${process.env.FRONTEND_URL.replace(/\/$/, "")}/logo.png`
+      },
+      meta: {
+        orderId: order.id,
+        userId: user.id
+      }
+      // Optional:
+      // payment_options: "card,mobilemoney"
+    };
 
-  const updatedPayment = await prisma.payment.update({
-    where: { id: payment.id },
-    data: {
-      gatewayReference:
-        stkResponse.CheckoutRequestID ||
-        stkResponse.MerchantRequestID ||
-        payment.gatewayReference
+    const response = await flutterwave.post("/payments", payload);
+    const flw = response.data;
+
+    if (flw.status !== "success" || !flw.data?.link) {
+      throw new ApiError(502, "Unable to initiate Flutterwave payment");
     }
-  });
 
-  return {
-    paymentId: updatedPayment.id,
-    merchantRequestId: stkResponse.MerchantRequestID,
-    checkoutRequestId: stkResponse.CheckoutRequestID,
-    customerMessage: stkResponse.CustomerMessage,
-    responseCode: stkResponse.ResponseCode,
-    responseDescription: stkResponse.ResponseDescription
-  };
+    return {
+      paymentId: payment.id,
+      txRef,
+      paymentLink: flw.data.link,
+      flutterwaveResponse: flw
+    };
+  } catch (error) {
+    throw new ApiError(
+      error.response?.status || 500,
+      error.response?.data?.message || error.message || "Flutterwave initiation failed"
+    );
+  }
 };
 
-const confirmMpesaPayment = async ({
-  checkoutRequestId,
-  mpesaReceiptNumber,
-  resultCode,
-  resultDesc
-}) => {
+const verifyFlutterwaveTransaction = async ({ transactionId }) => {
+  if (!transactionId) {
+    throw new ApiError(400, "Transaction ID is required for verification");
+  }
+
+  try {
+    const response = await flutterwave.get(`/transactions/${transactionId}/verify`);
+    return response.data;
+  } catch (error) {
+    throw new ApiError(
+      error.response?.status || 500,
+      error.response?.data?.message || "Failed to verify Flutterwave transaction"
+    );
+  }
+};
+
+const confirmFlutterwavePayment = async ({ transactionId }) => {
+  const verification = await verifyFlutterwaveTransaction({ transactionId });
+
+  const tx = verification?.data;
+
+  if (!tx) {
+    throw new ApiError(400, "Invalid verification response from Flutterwave");
+  }
+
+  const txRef = tx.tx_ref;
+  const status = tx.status;
+  const amount = Number(tx.amount);
+  const currency = tx.currency;
+  const receiptNumber = tx.flw_ref || String(tx.id);
+
   const payment = await prisma.payment.findFirst({
-    where: {
-      gatewayReference: checkoutRequestId
-    }
+    where: { gatewayReference: txRef },
+    include: { order: true }
   });
 
   if (!payment) {
-    throw new ApiError(404, "Payment not found for callback");
+    throw new ApiError(404, "Payment not found for verified transaction");
   }
 
-  if (String(resultCode) === "0") {
-    const updatedPayment = await prisma.payment.update({
+  if (payment.status === "SUCCESS") {
+    return {
+      success: true,
+      alreadyProcessed: true,
+      payment,
+      order: payment.order
+    };
+  }
+
+  const expectedAmount = Number(payment.amount);
+  const expectedCurrency = "KES";
+
+  const isSuccessful =
+    status === "successful" &&
+    currency === expectedCurrency &&
+    amount >= expectedAmount;
+
+  const result = await prisma.$transaction(async (txPrisma) => {
+    const updatedPayment = await txPrisma.payment.update({
       where: { id: payment.id },
       data: {
-        status: "SUCCESS",
-        receiptNumber: mpesaReceiptNumber || null
+        status: isSuccessful ? "SUCCESS" : "FAILED",
+        receiptNumber
       }
     });
 
-    const updatedOrder = await prisma.order.update({
+    const updatedOrder = await txPrisma.order.update({
       where: { id: payment.orderId },
-      data: { status: "PAID" },
+      data: {
+        status: isSuccessful ? "PAID" : "PENDING"
+      },
       include: {
         items: true,
         payment: true
@@ -92,27 +189,68 @@ const confirmMpesaPayment = async ({
     return {
       payment: updatedPayment,
       order: updatedOrder,
-      success: true,
-      resultDesc
+      success: isSuccessful,
+      verification
     };
-  }
-
-  const failedPayment = await prisma.payment.update({
-    where: { id: payment.id },
-    data: {
-      status: "FAILED"
-    }
   });
 
+  return result;
+};
+
+const handleFlutterwaveWebhook = async ({ payload, headers }) => {
+  const signature = headers["verif-hash"];
+  if (!signature || signature !== FLW_SECRET_HASH) {
+    throw new ApiError(401, "Invalid Flutterwave webhook signature");
+  }
+
+  const event = payload?.event;
+  const data = payload?.data;
+
+  if (!data?.id) {
+    throw new ApiError(400, "Invalid Flutterwave webhook payload");
+  }
+
+  // Only process successful charge-like events meaningfully.
+  // Even then, always verify with Flutterwave before updating the order.
+  if (event && String(event).toLowerCase().includes("charge")) {
+    return await confirmFlutterwavePayment({ transactionId: data.id });
+  }
+
+  // For any other event, acknowledge without failing the webhook flow.
   return {
-    payment: failedPayment,
-    order: null,
-    success: false,
-    resultDesc
+    success: true,
+    ignored: true,
+    event
   };
 };
 
+const getPaymentById = async ({ paymentId, user }) => {
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    include: {
+      order: {
+        include: {
+          items: true
+        }
+      }
+    }
+  });
+
+  if (!payment) {
+    throw new ApiError(404, "Payment not found");
+  }
+
+  if (user.role !== "admin" && payment.userId !== user.id) {
+    throw new ApiError(403, "Forbidden");
+  }
+
+  return payment;
+};
+
 module.exports = {
-  initiateMpesaPayment,
-  confirmMpesaPayment
+  initiateFlutterwavePayment,
+  confirmFlutterwavePayment,
+  handleFlutterwaveWebhook,
+  verifyFlutterwaveTransaction,
+  getPaymentById
 };

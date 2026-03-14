@@ -92,7 +92,7 @@ model Payment {
   user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   amount           Float
-  method           String        @default("MPESA")
+  method           String        @default("FLUTTERWAVE")
   phone            String?
 
   status           PaymentStatus @default(INITIATED)

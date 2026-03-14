@@ -38,7 +38,7 @@ swaggerSetup(app);
 // Health check
 app.get("/", (req, res) => {
   res.json({
-    message: "Jengamart API is running 🚀",
+    message: "Fundimart API is running 🚀",
     docs: "/docs"
   });
 });

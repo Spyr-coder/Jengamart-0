@@ -4,14 +4,14 @@
   "description": "Backend for JengaMart construction materials website",
   "main": "src/server.js",
   "scripts": {
-  "start": "node src/server.js",
-  "dev": "nodemon src/server.js",
-  "postinstall": "prisma generate",
-  "prisma:migrate": "prisma migrate dev",
-  "prisma:deploy": "prisma migrate deploy",
-  "prisma:generate": "prisma generate",
-  "prisma:studio": "prisma studio"
-},
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "postinstall": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:generate": "prisma generate",
+    "prisma:studio": "prisma studio"
+  },
   "author": "Jeremy",
   "license": "ISC",
   "dependencies": {
