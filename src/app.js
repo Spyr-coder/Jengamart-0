@@ -9,6 +9,7 @@ const swaggerSetup = require("./config/swagger");
 const app = express();
 
 const allowedOrigins = [
+  "http://localhost:8080", // Added to fix your local frontend port
   "http://localhost:3000",
   "http://localhost:5173",
   "http://localhost:5000",
@@ -28,6 +29,8 @@ app.use(
 
       return callback(new Error("CORS not allowed for this origin"));
     },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Added to cleanly support preflight OPTIONS requests
+    allowedHeaders: ["Content-Type", "Authorization"],    // Added to authorize standard headers
     credentials: true
   })
 );
