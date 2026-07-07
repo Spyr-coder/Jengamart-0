@@ -11,6 +11,7 @@ const {
 exports.initiatePayment = asyncHandler(async (req, res) => {
   const { orderId, phone } = req.body;
 
+  // 1. Fetch the order
   const order = await prisma.order.findUnique({
     where: { id: orderId }
   });
@@ -23,9 +24,19 @@ exports.initiatePayment = asyncHandler(async (req, res) => {
     throw new ApiError(403, "Forbidden");
   }
 
+  // 2. Fetch the complete user from the DB to guarantee email and name exist
+  const fullUser = await prisma.user.findUnique({
+    where: { id: req.user.id }
+  });
+
+  if (!fullUser) {
+    throw new ApiError(404, "User profile not found");
+  }
+
+  // 3. Pass the database-backed user object containing email and name
   const result = await initiateFlutterwavePayment({
     order,
-    user: req.user,
+    user: fullUser,
     phone
   });
 
@@ -37,8 +48,6 @@ exports.initiatePayment = asyncHandler(async (req, res) => {
 });
 
 exports.flutterwaveCallback = asyncHandler(async (req, res) => {
-  // Optional redirect verification endpoint for frontend/server use.
-  // Flutterwave redirects users here/there after checkout, but webhook remains the source of truth.
   const transactionId = req.query.transaction_id;
 
   if (!transactionId) {

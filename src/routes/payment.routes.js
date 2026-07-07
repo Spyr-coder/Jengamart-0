@@ -6,6 +6,7 @@ const paymentController = require("../controllers/payment.controller");
 const validate = require("../middlewares/validate.middleware");
 const { flutterwavePaymentSchema } = require("../validators/payment.validator");
 
+// 1. Initiate payment session
 router.post(
   "/initiate",
   protect,
@@ -13,11 +14,13 @@ router.post(
   paymentController.initiatePayment
 );
 
-router.post("/callback", paymentController.flutterwaveWebhook);
+// 2. Background webhook endpoint (Handles automated Flutterwave server verification alerts)
+router.post("/webhook", paymentController.flutterwaveWebhook);
 
-// Optional verification endpoint after redirect if your frontend wants it
+// 3. Frontend browser redirect landing endpoint (Handles user browser navigation return)
 router.get("/callback", paymentController.flutterwaveCallback);
 
+// 4. Fetch payment details
 router.get("/:id", protect, paymentController.getPayment);
 
 module.exports = router;

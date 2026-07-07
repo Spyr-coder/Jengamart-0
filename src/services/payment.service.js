@@ -6,11 +6,14 @@ const FLW_BASE_URL = "https://api.flutterwave.com/v3";
 const FLW_SECRET_KEY = process.env.FLW_SECRET_KEY;
 const FLW_SECRET_HASH = process.env.FLW_SECRET_HASH || process.env.FLW_SECRET_KEY_HASH;
 
+// Fail-safe initialization for frontend URLs
+const baseFrontendUrl = (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");
+
 const flutterwave = axios.create({
   baseURL: FLW_BASE_URL,
   timeout: 30000,
   headers: {
-    Authorization: `Bearer ${FLW_SECRET_KEY}`,
+    Authorization: `Bearer ${String(FLW_SECRET_KEY).trim()}`,
     "Content-Type": "application/json"
   }
 });
@@ -48,11 +51,24 @@ const initiateFlutterwavePayment = async ({ order, user, phone }) => {
   }
 
   const normalizedPhone = normalizePhone(phone);
-  const txRef = existingPayment?.gatewayReference || buildTxRef(order.id);
+  
+  // ALWAYS generate a fresh unique reference to prevent Flutterwave from throwing "Link has expired"
+  const txRef = buildTxRef(order.id);
 
-  const payment =
-    existingPayment ||
-    (await prisma.payment.create({
+  let payment;
+  if (existingPayment) {
+    // Update the existing record with the fresh gatewayReference string
+    payment = await prisma.payment.update({
+      where: { id: existingPayment.id },
+      data: {
+        gatewayReference: txRef,
+        phone: normalizedPhone,
+        status: "INITIATED"
+      }
+    });
+  } else {
+    // Create a new record if it doesn't exist yet
+    payment = await prisma.payment.create({
       data: {
         orderId: order.id,
         userId: user.id,
@@ -62,14 +78,15 @@ const initiateFlutterwavePayment = async ({ order, user, phone }) => {
         status: "INITIATED",
         gatewayReference: txRef
       }
-    }));
+    });
+  }
 
   try {
     const payload = {
       tx_ref: txRef,
       amount: order.subtotal,
       currency: "KES",
-      redirect_url: `${process.env.FRONTEND_URL.replace(/\/$/, "")}/payment/callback`,
+      redirect_url: `${baseFrontendUrl}/payment/callback`,
       customer: {
         email: user.email,
         name: user.name,
@@ -78,14 +95,12 @@ const initiateFlutterwavePayment = async ({ order, user, phone }) => {
       customizations: {
         title: "Fundimart",
         description: `Payment for order ${order.id.slice(0, 8)}`,
-        logo: `${process.env.FRONTEND_URL.replace(/\/$/, "")}/logo.png`
+        logo: `${baseFrontendUrl}/logo.png`
       },
       meta: {
         orderId: order.id,
         userId: user.id
       }
-      // Optional:
-      // payment_options: "card,mobilemoney"
     };
 
     const response = await flutterwave.post("/payments", payload);
@@ -210,13 +225,10 @@ const handleFlutterwaveWebhook = async ({ payload, headers }) => {
     throw new ApiError(400, "Invalid Flutterwave webhook payload");
   }
 
-  // Only process successful charge-like events meaningfully.
-  // Even then, always verify with Flutterwave before updating the order.
   if (event && String(event).toLowerCase().includes("charge")) {
     return await confirmFlutterwavePayment({ transactionId: data.id });
   }
 
-  // For any other event, acknowledge without failing the webhook flow.
   return {
     success: true,
     ignored: true,

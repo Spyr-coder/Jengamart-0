@@ -8,7 +8,12 @@ const protect = (req, res, next) => {
     throw new ApiError(401, "Not authorized");
   }
 
-  const token = authHeader.split(" ")[1];
+  let token = authHeader.split(" ")[1];
+
+  // Strip out surrounding double quotes if Swagger UI or a client app includes them literals
+  if (token && token.startsWith('"') && token.endsWith('"')) {
+    token = token.slice(1, -1);
+  }
 
   try {
     const decoded = verifyToken(token);
