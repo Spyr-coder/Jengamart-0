@@ -19,24 +19,35 @@ const kenyanLocations = {
 exports.initiatePayment = asyncHandler(async (req, res) => {
   const { orderId, phone, amount, county, town, metadata } = req.body;
 
-  // 1. Server-Side Location Cross-Verification
-  const validTowns = kenyanLocations[county];
+  // 1. Defensively catch missing strings or spacebar injections before array evaluations
+  if (!county || !county.trim() || !town || !town.trim()) {
+    throw new ApiError(400, "Delivery County and Town/Area are required fields.");
+  }
+
+  const cleanCounty = county.trim();
+  const cleanTown = town.trim();
+
+  // 2. Server-Side Location Cross-Verification
+  const validTowns = kenyanLocations[cleanCounty];
   if (!validTowns) {
-    throw new ApiError(400, `Invalid County selected: '${county}'. Please select a valid option.`);
+    throw new ApiError(400, `Invalid County selected: '${cleanCounty}'. Please select a valid option.`);
   }
 
-  if (!validTowns.includes(town)) {
-    throw new ApiError(400, `The location '${town}' does not belong to ${county} County.`);
+  if (!validTowns.includes(cleanTown)) {
+    throw new ApiError(400, `The location '${cleanTown}' does not belong to ${cleanCounty} County.`);
   }
 
-  // 2. Detect if this is a Quick Checkout (Direct from Cart) or an explicit Order-based checkout
+  // 3. Quick Checkout Flow: Handle Direct-from-Cart operations safely (Supports Guests)
   if (!orderId && amount) {
-    console.log(`Processing direct quick-checkout for amount: ${amount} | Phone: ${phone} | Location: ${town}, ${county}`);
+    console.log(`Processing direct quick-checkout for amount: ${amount} | Phone: ${phone} | Location: ${cleanTown}, ${cleanCounty}`);
     
-    // Create a fallback guest user object if no auth token is attached
-    const guestUser = req.user ? 
-      await prisma.user.findUnique({ where: { id: req.user.id } }) : 
-      { id: "guest", firstName: "Guest", lastName: "Buyer", email: "guest@fundimart.com" };
+    // Safely evaluate authentication contexts without interrupting guest requests
+    let customerUser = { id: "guest", firstName: "Guest", lastName: "Buyer", email: "guest@fundimart.com" };
+    
+    if (req.user && req.user.id) {
+      const dbUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (dbUser) customerUser = dbUser;
+    }
 
     return res.status(200).json({
       success: true,
@@ -44,17 +55,17 @@ exports.initiatePayment = asyncHandler(async (req, res) => {
       data: {
         phone,
         amount,
-        county,
-        town,
+        county: cleanCounty,
+        town: cleanTown,
         metadata,
-        customer: guestUser
+        customer: customerUser
       }
     });
   }
 
-  // 3. Standard Flow: Handle Explicit pre-existing orders
+  // 4. Standard Flow: Handle explicit pre-existing order lookups (Requires Authentication)
   if (!orderId) {
-    throw new ApiError(400, "Missing orderId for standard verification flow");
+    throw new ApiError(400, "Missing orderId parameter for standard verification flow");
   }
 
   const order = await prisma.order.findUnique({
@@ -62,7 +73,7 @@ exports.initiatePayment = asyncHandler(async (req, res) => {
   });
 
   if (!order) {
-    throw new ApiError(404, "Order not found");
+    throw new ApiError(404, "Order records not found within our system.");
   }
 
   if (!req.user) {
@@ -70,25 +81,25 @@ exports.initiatePayment = asyncHandler(async (req, res) => {
   }
 
   if (order.userId !== req.user.id) {
-    throw new ApiError(403, "Forbidden");
+    throw new ApiError(403, "Access denied. You do not own the requested order record.");
   }
 
-  // Update order destination parameters securely before hitting gateways
+  // Update order destination parameters securely before invoking external services
   const updatedOrder = await prisma.order.update({
     where: { id: orderId },
-    data: { county, town }
+    data: { county: cleanCounty, town: cleanTown }
   });
 
-  // Fetch the complete user from the DB to guarantee email and name exist
+  // Fetch complete profile records to guarantee delivery details exist
   const fullUser = await prisma.user.findUnique({
     where: { id: req.user.id }
   });
 
   if (!fullUser) {
-    throw new ApiError(404, "User profile not found");
+    throw new ApiError(404, "User profile record not found.");
   }
 
-  // Pass the database-backed user object containing email and name
+  // Pass complete user profile metrics into active service integrations
   const result = await initiateFlutterwavePayment({
     order: updatedOrder,
     user: fullUser,
@@ -106,7 +117,7 @@ exports.flutterwaveCallback = asyncHandler(async (req, res) => {
   const transactionId = req.query.transaction_id;
 
   if (!transactionId) {
-    throw new ApiError(400, "Missing transaction_id");
+    throw new ApiError(400, "Missing transaction_id query parameters.");
   }
 
   const result = await confirmFlutterwavePayment({ transactionId });
@@ -131,7 +142,7 @@ exports.flutterwaveWebhook = asyncHandler(async (req, res) => {
 
 exports.getPayment = asyncHandler(async (req, res) => {
   if (!req.user) {
-    throw new ApiError(401, "Authentication required to fetch payment info");
+    throw new ApiError(401, "Authentication required to fetch payment info.");
   }
 
   const payment = await getPaymentById({
