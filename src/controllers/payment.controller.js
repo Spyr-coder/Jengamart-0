@@ -8,33 +8,51 @@ const {
   getPaymentById
 } = require("../services/payment.service");
 
-exports.initiatePayment = asyncHandler(async (req, res) => {
-  const { orderId, phone, amount, metadata } = req.body;
+// Embedded localized dataset for rigorous cross-verification
+const kenyanLocations = {
+  "Nairobi": ["Westlands", "CBD", "Ruiru Bypass", "Lang'ata", "Kasarani"],
+  "Kisumu": ["Kisumu Central", "Milimani", "Kondele", "Kibos", "Riat"],
+  "Mombasa": ["Nyali", "Changamwe", "Mtwapa", "Kisauni", "Likoni"],
+  "Uasin Gishu": ["Eldoret CBD", "Kapsoya", "Langas", "Pioneer"]
+};
 
-  // 1. Detect if this is a Quick Checkout (Direct from Cart) or an explicit Order-based checkout
+exports.initiatePayment = asyncHandler(async (req, res) => {
+  const { orderId, phone, amount, county, town, metadata } = req.body;
+
+  // 1. Server-Side Location Cross-Verification
+  const validTowns = kenyanLocations[county];
+  if (!validTowns) {
+    throw new ApiError(400, `Invalid County selected: '${county}'. Please select a valid option.`);
+  }
+
+  if (!validTowns.includes(town)) {
+    throw new ApiError(400, `The location '${town}' does not belong to ${county} County.`);
+  }
+
+  // 2. Detect if this is a Quick Checkout (Direct from Cart) or an explicit Order-based checkout
   if (!orderId && amount) {
-    console.log("Processing direct quick-checkout for amount:", amount, "Phone:", phone);
+    console.log(`Processing direct quick-checkout for amount: ${amount} | Phone: ${phone} | Location: ${town}, ${county}`);
     
     // Create a fallback guest user object if no auth token is attached
     const guestUser = req.user ? 
       await prisma.user.findUnique({ where: { id: req.user.id } }) : 
       { id: "guest", firstName: "Guest", lastName: "Buyer", email: "guest@fundimart.com" };
 
-    // You can write additional custom local DB logging here to persist the data if necessary.
-    // For now, bypass the Safaricom / Flutterwave API credentials roadblock and return a 200 status
     return res.status(200).json({
       success: true,
       message: "Payment request received successfully at Fundimart backend Gateway!",
       data: {
         phone,
         amount,
+        county,
+        town,
         metadata,
         customer: guestUser
       }
     });
   }
 
-  // 2. Standard Flow: Handle Explicit pre-existing orders (Flutterwave code path)
+  // 3. Standard Flow: Handle Explicit pre-existing orders
   if (!orderId) {
     throw new ApiError(400, "Missing orderId for standard verification flow");
   }
@@ -55,6 +73,12 @@ exports.initiatePayment = asyncHandler(async (req, res) => {
     throw new ApiError(403, "Forbidden");
   }
 
+  // Update order destination parameters securely before hitting gateways
+  const updatedOrder = await prisma.order.update({
+    where: { id: orderId },
+    data: { county, town }
+  });
+
   // Fetch the complete user from the DB to guarantee email and name exist
   const fullUser = await prisma.user.findUnique({
     where: { id: req.user.id }
@@ -66,7 +90,7 @@ exports.initiatePayment = asyncHandler(async (req, res) => {
 
   // Pass the database-backed user object containing email and name
   const result = await initiateFlutterwavePayment({
-    order,
+    order: updatedOrder,
     user: fullUser,
     phone
   });

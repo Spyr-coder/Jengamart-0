@@ -40,15 +40,15 @@ model User {
 }
 
 model Product {
-  id          String   @id @default(uuid())
+  id          String      @id @default(uuid())
   name        String
   price       Float
   unit        String
   stock       Int
-  category    String   @default("general")
-  description String   @default("")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  category    String      @default("general")
+  description String      @default("")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   orderItems  OrderItem[]
 }
@@ -60,6 +60,10 @@ model Order {
 
   subtotal  Float
   status    OrderStatus @default(PENDING)
+  
+  // Mandatory shipping destination parameters to eliminate empty space anomalies
+  county    String
+  town      String
 
   items     OrderItem[]
   payment   Payment?
