@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "Order" ADD COLUMN     "county" TEXT NOT NULL DEFAULT 'Nairobi',
+ADD COLUMN     "town" TEXT NOT NULL DEFAULT 'CBD';
+
+-- AlterTable
+ALTER TABLE "Payment" ALTER COLUMN "method" SET DEFAULT 'FLUTTERWAVE';

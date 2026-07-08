@@ -61,9 +61,9 @@ model Order {
   subtotal  Float
   status    OrderStatus @default(PENDING)
   
-  // Mandatory shipping destination parameters to eliminate empty space anomalies
-  county    String
-  town      String
+  // Add temporary defaults so PostgreSQL can backfill your 7 existing rows
+  county    String      @default("Nairobi")
+  town      String      @default("CBD")
 
   items     OrderItem[]
   payment   Payment?
