@@ -62,8 +62,8 @@ model Order {
   status    OrderStatus @default(PENDING)
   
   // Add temporary defaults so PostgreSQL can backfill your 7 existing rows
-  county    String      @default("Nairobi")
-  town      String      @default("CBD")
+  county    String
+  town      String
 
   items     OrderItem[]
   payment   Payment?

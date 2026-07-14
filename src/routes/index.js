@@ -1,10 +1,11 @@
-const paymentRoutes = require("./payment.routes");
-const adminOrderRoutes = require("./admin.order.routes");
 const express = require("express");
 const router = express.Router();
 
 const authRoutes = require("./auth.routes");
 const productRoutes = require("./product.routes");
+const paymentRoutes = require("./payment.routes");
+const adminOrderRoutes = require("./admin.order.routes");
+const aiRoutes = require("./aiRoutes"); // 👈 Imported your new AI routes here
 
 // If you created these later, keep them; if not, comment them out
 let cartRoutes, orderRoutes;
@@ -26,6 +27,7 @@ router.get("/health", (req, res) => {
 // Debug prints (TEMPORARY) — helps confirm exports are correct
 console.log("authRoutes type:", typeof authRoutes);
 console.log("productRoutes type:", typeof productRoutes);
+console.log("aiRoutes type:", typeof aiRoutes); // 👈 Added debug check for AI routes
 if (cartRoutes) console.log("cartRoutes type:", typeof cartRoutes);
 if (orderRoutes) console.log("orderRoutes type:", typeof orderRoutes);
 
@@ -37,5 +39,8 @@ if (orderRoutes) router.use("/orders", orderRoutes);
 
 router.use("/payments", paymentRoutes);
 router.use("/admin/orders", adminOrderRoutes);
+
+// Mount the AI Assistant endpoints under /api/ai
+router.use("/ai", aiRoutes); // 👈 Registered the AI router here
 
 module.exports = router;
