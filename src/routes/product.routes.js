@@ -10,27 +10,56 @@ const {
   updateProductSchema
 } = require("../validators/product.validator");
 
-// Public routes
+// ==========================================
+// PUBLIC ROUTES
+// ==========================================
+
+// Get all products (Customers only see APPROVED, Admins see all)
 router.get("/", productController.getProducts);
+
+// Get a single product by ID (Unapproved products are restricted to Admins)
 router.get("/:id", productController.getProductById);
 
-// Admin routes
+// ==========================================
+// PROTECTED ROUTES (Requires Logged-In User)
+// ==========================================
+
+// Create a new product (Defaults to PENDING, allowed for sellers/customers and admins)
 router.post(
   "/",
   protect,
-  authorize("admin"),
+  authorize("admin", "customer"),
   validate(createProductSchema),
   productController.createProduct
 );
 
+// Update product details (Resets status to PENDING, allowed for sellers/customers and admins)
 router.put(
   "/:id",
   protect,
-  authorize("admin"),
+  authorize("admin", "customer"),
   validate(updateProductSchema),
   productController.updateProduct
 );
 
-router.delete("/:id", protect, authorize("admin"), productController.deleteProduct);
+// ==========================================
+// ADMIN ONLY ROUTES
+// ==========================================
+
+// Approve or Reject a product status (Expects { "status": "APPROVED" | "REJECTED" | "PENDING" })
+router.patch(
+  "/:id/status",
+  protect,
+  authorize("admin"),
+  productController.updateProductStatus
+);
+
+// Delete a product permanently
+router.delete(
+  "/:id",
+  protect,
+  authorize("admin"),
+  productController.deleteProduct
+);
 
 module.exports = router;

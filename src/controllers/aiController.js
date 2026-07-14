@@ -19,7 +19,7 @@ const getProjectEstimate = async (req, res) => {
 
     // We force Gemini to respond strictly in structured JSON format
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.5-flash",
       contents: [
         ...formattedHistory,
         { role: "user", parts: [{ text: message }] }
