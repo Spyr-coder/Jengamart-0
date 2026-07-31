@@ -3,6 +3,7 @@ const cors = require("cors");
 const morgan = require("morgan");
 
 const routes = require("./routes");
+const adminRoutes = require("./routes/admin.routes");
 const errorHandler = require("./middlewares/error.middleware");
 const swaggerSetup = require("./config/swagger");
 
@@ -14,7 +15,7 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5000",
   "http://127.0.0.1:5000",
-  "https://kusaawards2026.org", // 👈 Added your live custom Netlify deployment domain
+  "https://kusaawards2026.org",
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
@@ -30,7 +31,7 @@ app.use(
 
       return callback(new Error(`CORS not allowed for this origin: ${origin}`));
     },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], 
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], 
     allowedHeaders: ["Content-Type", "Authorization"],    
     credentials: true
   })
@@ -49,8 +50,13 @@ app.get("/", (req, res) => {
   });
 });
 
+// Admin Moderation & Management routes
+app.use("/api/v1/admin", adminRoutes);
+
+// General API routes
 app.use("/api", routes);
 
+// Global Error Handler
 app.use(errorHandler);
 
 module.exports = app;

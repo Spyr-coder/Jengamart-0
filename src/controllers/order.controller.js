@@ -274,3 +274,96 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     order: updatedOrder
   });
 });
+
+// Buyer confirms delivery and optionally rates the seller/order
+exports.completeOrder = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { rating, reviewComment } = req.body;
+
+  const order = await prisma.order.findUnique({ where: { id } });
+
+  if (!order) {
+    throw new ApiError(404, "Order not found");
+  }
+
+  if (order.userId !== req.user.id) {
+    throw new ApiError(403, "Only the buyer who placed this order can confirm completion");
+  }
+
+  if (rating && (rating < 1 || rating > 5)) {
+    throw new ApiError(400, "Rating must be an integer between 1 and 5");
+  }
+
+  const updatedOrder = await prisma.order.update({
+    where: { id },
+    data: {
+      status: "COMPLETED",
+      rating: rating ? Number(rating) : undefined,
+      reviewComment: reviewComment || undefined
+    }
+  });
+
+  // Notify seller that order was completed
+  if (order.sellerId) {
+    await notificationService.createInAppNotification({
+      userId: order.sellerId,
+      orderId: order.id,
+      title: "Order Completed",
+      message: `Buyer has confirmed delivery for Order #${order.orderNumber || order.id}.${rating ? ` Rating: ${rating}/5 ⭐` : ""}`
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Order marked as completed",
+    order: updatedOrder
+  });
+});
+
+// Buyer or Seller reports an issue with an order
+exports.reportOrderIssue = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { issueReason } = req.body;
+
+  if (!issueReason) {
+    throw new ApiError(400, "Please provide a reason for reporting the issue");
+  }
+
+  const order = await prisma.order.findUnique({ where: { id } });
+
+  if (!order) {
+    throw new ApiError(404, "Order not found");
+  }
+
+  const isBuyer = order.userId === req.user.id;
+  const isSeller = order.sellerId === req.user.id;
+
+  if (!isBuyer && !isSeller) {
+    throw new ApiError(403, "You are not authorized to report an issue for this order");
+  }
+
+  const updatedOrder = await prisma.order.update({
+    where: { id },
+    data: {
+      issueReported: true,
+      issueReason
+    }
+  });
+
+  // Notify the other party
+  const recipientId = isBuyer ? order.sellerId : order.userId;
+  if (recipientId) {
+    await notificationService.createInAppNotification({
+      userId: recipientId,
+      orderId: order.id,
+      title: "Issue Reported on Order",
+      message: `An issue was reported on Order #${order.orderNumber || order.id}: "${issueReason}"`
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Issue reported successfully. Support team notified.",
+    order: updatedOrder
+  });
+});

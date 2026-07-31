@@ -118,6 +118,11 @@ model Order {
   preferredPaymentMethod String?     // e.g. "M-Pesa", "Cash on Delivery"
   cancellationReason     String?
 
+issueReported          Boolean     @default(false)
+  issueReason            String?
+  rating                 Int?        // Scale 1-5
+  reviewComment          String?
+
   items                  OrderItem[]
   payment                Payment?
 
@@ -181,4 +186,12 @@ model Notification {
   createdAt DateTime @default(now())
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
