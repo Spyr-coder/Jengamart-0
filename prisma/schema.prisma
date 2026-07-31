@@ -7,17 +7,29 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ----------------------------------------------------
+// ENUMS
+// ----------------------------------------------------
+
 enum Role {
   customer
+  seller
   admin
 }
 
 enum OrderStatus {
+  // Active MVP Marketplace Statuses
+  SUBMITTED
+  ACCEPTED
+  PREPARING
+  DELIVERED
+  COMPLETED
+  CANCELLED
+
+  // Legacy/Future Payment Statuses (Preserved)
   PENDING
   PAID
   SHIPPED
-  DELIVERED
-  CANCELLED
 }
 
 enum PaymentStatus {
@@ -32,17 +44,34 @@ enum ProductStatus {
   REJECTED
 }
 
-model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role     @default(customer)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// ----------------------------------------------------
+// MODELS
+// ----------------------------------------------------
 
-  orders    Order[]
-  payments  Payment[]
+model User {
+  id             String   @id @default(uuid())
+  name           String
+  email          String   @unique
+  password       String
+  role           Role     @default(customer)
+  
+  // Mandatory for MVP direct buyer-seller contact
+  phoneNumber    String   @default("")
+  whatsappNumber String?
+
+  county         String?
+  town           String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relationships
+  products       Product[]        @relation("SellerProducts")
+  orders         Order[]          @relation("BuyerOrders")
+  sellerOrders   Order[]          @relation("SellerOrders")
+  payments       Payment[]
+  clickAnalytics ClickAnalytics[]
+  notifications  Notification[]   // 👈 Fixed missing inverse relation
 }
 
 model Product {
@@ -54,6 +83,11 @@ model Product {
   category    String        @default("general")
   description String        @default("")
   status      ProductStatus @default(PENDING)
+  
+  // Link product to a seller (Defaults to null for backfilled legacy products)
+  sellerId    String?
+  seller      User?         @relation("SellerProducts", fields: [sellerId], references: [id], onDelete: SetNull)
+
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -61,22 +95,34 @@ model Product {
 }
 
 model Order {
-  id        String      @id @default(uuid())
-  userId    String
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                     String      @id @default(uuid())
+  orderNumber            String      @unique @default(cuid())
 
-  subtotal  Float
-  status    OrderStatus @default(PENDING)
+  // Buyer relation
+  userId                 String
+  user                   User        @relation("BuyerOrders", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Seller relation (Optional for guest checkouts / single-seller routing)
+  sellerId               String?
+  seller                 User?       @relation("SellerOrders", fields: [sellerId], references: [id], onDelete: SetNull)
+
+  subtotal               Float
+  status                 OrderStatus @default(SUBMITTED)
   
-  // Add temporary defaults so PostgreSQL can backfill your 7 existing rows
-  county    String
-  town      String
+  // Delivery location
+  county                 String
+  town                   String
+  deliveryAddress        String?
 
-  items     OrderItem[]
-  payment   Payment?
+  // MVP Direct Contact & Payment Preference
+  preferredPaymentMethod String?     // e.g. "M-Pesa", "Cash on Delivery"
+  cancellationReason     String?
 
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  items                  OrderItem[]
+  payment                Payment?
+
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
 }
 
 model OrderItem {
@@ -112,4 +158,27 @@ model Payment {
 
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
+}
+
+// Analytics tracking model for CEO business brief
+model ClickAnalytics {
+  id        String   @id @default(uuid())
+  userId    String?
+  orderId   String?
+  eventType String   // "WHATSAPP_CLICK", "CALL_CLICK", "PREFERRED_PAYMENT_CLICK"
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   // Recipient (Buyer, Seller, or Admin)
+  orderId   String?
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

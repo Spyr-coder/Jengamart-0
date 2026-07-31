@@ -2,7 +2,11 @@ const express = require("express");
 const router = express.Router();
 
 const protect = require("../middlewares/auth.middleware");
+const { requirePaymentFeature } = require("../middlewares/featureGuard.middleware");
 const paymentController = require("../controllers/payment.controller");
+
+// Block all payment endpoints during MVP phase without deleting code
+router.use(requirePaymentFeature);
 
 // 1. Core Flexible Endpoint (Publicly accessible to safely handle both Guest & Logged-In checkouts)
 router.post("/initiate", paymentController.initiatePayment); 
