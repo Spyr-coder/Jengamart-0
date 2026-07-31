@@ -3,6 +3,19 @@ const asyncHandler = require("../utils/asyncHandler");
 const ApiError = require("../utils/apiError");
 const notificationService = require("../services/notification.service");
 
+// Helper function to safely send notifications without throwing fatal server errors
+const safeSendNotification = async (payload) => {
+  try {
+    if (notificationService && typeof notificationService.createInAppNotification === "function") {
+      await notificationService.createInAppNotification(payload);
+    } else {
+      console.warn("[WARN] notificationService.createInAppNotification is not defined.");
+    }
+  } catch (error) {
+    console.error("[ERROR] Failed to dispatch notification:", error.message);
+  }
+};
+
 // Create order with transaction, stock deduction, and contact reveal
 exports.createOrder = asyncHandler(async (req, res) => {
   const userId = req.user.id;
@@ -106,16 +119,16 @@ exports.createOrder = asyncHandler(async (req, res) => {
     const whatsappMsg = encodeURIComponent(
       `Hello ${seller.name}, I have placed Order #${createdOrder.orderNumber || createdOrder.id} on Fundimart for KES ${createdOrder.subtotal}. Let's arrange payment and delivery.`
     );
-    
+
     sellerContact = {
       name: seller.name,
       phoneNumber: seller.phoneNumber,
       whatsappNumber: seller.whatsappNumber,
-      whatsappUrl: contactPhone ? `https://wa.me/${contactPhone.replace(/[^0-9]/g, '')}?text=${whatsappMsg}` : null
+      whatsappUrl: contactPhone ? `https://wa.me/${contactPhone.replace(/[^0-9]/g, "")}?text=${whatsappMsg}` : null
     };
 
-    // Notify Seller about the new incoming order
-    await notificationService.createInAppNotification({
+    // Safe Notification Call
+    await safeSendNotification({
       userId: seller.id,
       orderId: createdOrder.id,
       title: "New Incoming Order",
@@ -212,7 +225,7 @@ exports.getOrderById = asyncHandler(async (req, res) => {
   });
 });
 
-// Update Order Status (SUBMITTED -> ACCEPTED -> PREPARING -> DELIVERED -> COMPLETED / CANCELLED)
+// Update Order Status & Restore Stock if CANCELLED
 exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status, cancellationReason } = req.body;
@@ -233,35 +246,53 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid or missing order status");
   }
 
-  const existingOrder = await prisma.order.findUnique({ where: { id } });
+  const existingOrder = await prisma.order.findUnique({
+    where: { id },
+    include: { items: true }
+  });
+
   if (!existingOrder) {
     throw new ApiError(404, "Order not found");
   }
 
-  const updatedOrder = await prisma.order.update({
-    where: { id },
-    data: {
-      status,
-      cancellationReason: status === "CANCELLED" ? cancellationReason : undefined
-    },
-    include: {
-      items: true
+  // Handle stock restoration if order gets CANCELLED from an active state
+  const isCancelling = status === "CANCELLED" && existingOrder.status !== "CANCELLED";
+
+  const updatedOrder = await prisma.$transaction(async (tx) => {
+    if (isCancelling) {
+      for (const item of existingOrder.items) {
+        if (item.productId) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } }
+          });
+        }
+      }
     }
+
+    return await tx.order.update({
+      where: { id },
+      data: {
+        status,
+        cancellationReason: status === "CANCELLED" ? cancellationReason : undefined
+      },
+      include: { items: true }
+    });
   });
 
-  // 🔔 Trigger In-App Notification to Buyer upon Status Change
+  // Safe notification message generation
   let title = "Order Status Updated";
   let message = `Your Order #${updatedOrder.orderNumber || updatedOrder.id} is now ${status}.`;
 
   if (status === "ACCEPTED") {
     message = `The seller has accepted your order! Check contact details to arrange payment and delivery directly.`;
   } else if (status === "CANCELLED") {
-    message = `Your order was cancelled. Reason: ${cancellationReason || "Not specified"}.`;
+    message = `Your order was cancelled. Reason: ${cancellationReason || "Not specified"}. Stock has been restored.`;
   } else if (status === "DELIVERED") {
     message = `Your order has been marked as delivered by the seller. Please confirm completion on your dashboard.`;
   }
 
-  await notificationService.createInAppNotification({
+  await safeSendNotification({
     userId: updatedOrder.userId,
     orderId: updatedOrder.id,
     title,
@@ -303,9 +334,8 @@ exports.completeOrder = asyncHandler(async (req, res) => {
     }
   });
 
-  // Notify seller that order was completed
   if (order.sellerId) {
-    await notificationService.createInAppNotification({
+    await safeSendNotification({
       userId: order.sellerId,
       orderId: order.id,
       title: "Order Completed",
@@ -350,10 +380,9 @@ exports.reportOrderIssue = asyncHandler(async (req, res) => {
     }
   });
 
-  // Notify the other party
   const recipientId = isBuyer ? order.sellerId : order.userId;
   if (recipientId) {
-    await notificationService.createInAppNotification({
+    await safeSendNotification({
       userId: recipientId,
       orderId: order.id,
       title: "Issue Reported on Order",
