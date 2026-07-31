@@ -48,9 +48,10 @@ app.get("/", (req, res) => {
 });
 
 // Admin Moderation & Management routes
-// Fixed check so Express router objects mount cleanly
+// Mounted on both /api/v1/admin and /api/admin to catch all frontend calls
 if (adminRoutes) {
   app.use("/api/v1/admin", adminRoutes);
+  app.use("/api/admin", adminRoutes);
 }
 
 // General API routes
