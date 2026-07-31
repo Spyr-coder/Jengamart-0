@@ -6,20 +6,20 @@ const adminOnly = require("../middlewares/admin.middleware");
 const adminController = require("../controllers/admin.controller");
 
 // ==========================================
-// 1. PUBLIC ADMIN ROUTES (No Token Needed)
+// 1. PUBLIC ADMIN ROUTES
 // ==========================================
 router.post("/login", adminController.adminLogin);
 
 // ==========================================
-// 2. PROTECTED ADMIN ROUTES (Token Required)
+// 2. PROTECTED ADMIN ROUTES (Requires Admin Token)
 // ==========================================
-// Require authentication & admin role for all routes below this line
 router.use(protect, adminOnly);
 
 // Metrics dashboard
 router.get("/metrics", adminController.getAdminMetrics);
 
-// Product Moderation
+// Product Moderation & Management
+router.get("/products", adminController.getAllProducts);
 router.get("/products/pending", adminController.getPendingProducts);
 router.patch("/products/:id/status", adminController.moderateProduct);
 

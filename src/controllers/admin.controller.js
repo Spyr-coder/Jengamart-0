@@ -4,19 +4,18 @@ const asyncHandler = require("../utils/asyncHandler");
 const ApiError = require("../utils/apiError");
 
 // ==========================================
-// 0. ADMIN AUTHENTICATION
+// 0. HELPER FUNCTIONS & AUTHENTICATION
 // ==========================================
 
-// Helper function to sanitize environment keys and input strings
 const sanitizeKey = (key) => {
   if (!key) return "";
   return String(key)
     .trim()
-    .replace(/^["']|["']$/g, "") // Strip leading and trailing quotes
-    .replace(/\s+/g, "");        // Remove any internal spaces/newlines
+    .replace(/^["']|["']$/g, "")
+    .replace(/\s+/g, "");
 };
 
-// Verify admin key against environment variable and issue JWT
+// Admin login verification and JWT issuance
 exports.adminLogin = asyncHandler(async (req, res) => {
   const { adminKey } = req.body;
 
@@ -34,7 +33,6 @@ exports.adminLogin = asyncHandler(async (req, res) => {
   const sanitizedExpected = sanitizeKey(rawExpectedKey);
   const sanitizedInput = sanitizeKey(adminKey);
 
-  // Safe server logging for debugging key mismatches
   if (sanitizedInput !== sanitizedExpected) {
     console.warn(
       `⚠️ Admin Login Failed | Input Len: ${sanitizedInput.length} | Expected Len: ${sanitizedExpected.length}`
@@ -44,7 +42,6 @@ exports.adminLogin = asyncHandler(async (req, res) => {
 
   console.log("✅ Admin key verified successfully.");
 
-  // Issue a signed 8-hour session token
   const token = jwt.sign(
     { role: "admin" },
     process.env.JWT_SECRET || "default_jwt_secret",
@@ -59,10 +56,29 @@ exports.adminLogin = asyncHandler(async (req, res) => {
 });
 
 // ==========================================
-// 1. PRODUCT MODERATION
+// 1. PRODUCT MODERATION & MANAGEMENT
 // ==========================================
 
-// Get all pending products for moderation
+// Get ALL products (Approved, Pending, Rejected) for Admin Management Table
+exports.getAllProducts = asyncHandler(async (req, res) => {
+  const products = await prisma.product.findMany({
+    include: {
+      category: true,
+      seller: {
+        select: { id: true, name: true, email: true, phoneNumber: true }
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  res.status(200).json({
+    success: true,
+    count: products.length,
+    products
+  });
+});
+
+// Get pending products for moderation
 exports.getPendingProducts = asyncHandler(async (req, res) => {
   const products = await prisma.product.findMany({
     where: { status: "PENDING" },
@@ -81,13 +97,13 @@ exports.getPendingProducts = asyncHandler(async (req, res) => {
   });
 });
 
-// Moderate product (APPROVED or REJECTED)
+// Moderate product status (APPROVED or REJECTED)
 exports.moderateProduct = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
-  if (!["APPROVED", "REJECTED"].includes(status)) {
-    throw new ApiError(400, "Status must be either APPROVED or REJECTED");
+  if (!["APPROVED", "REJECTED", "PENDING"].includes(status)) {
+    throw new ApiError(400, "Status must be APPROVED, REJECTED, or PENDING");
   }
 
   const product = await prisma.product.findUnique({ where: { id } });
@@ -111,7 +127,6 @@ exports.moderateProduct = asyncHandler(async (req, res) => {
 // 2. USER MANAGEMENT
 // ==========================================
 
-// Get all registered users
 exports.getAllUsers = asyncHandler(async (req, res) => {
   const users = await prisma.user.findMany({
     select: {
@@ -139,7 +154,6 @@ exports.getAllUsers = asyncHandler(async (req, res) => {
 // 3. CATEGORY MANAGEMENT
 // ==========================================
 
-// Create new product category
 exports.createCategory = asyncHandler(async (req, res) => {
   const { name, description } = req.body;
 
@@ -164,7 +178,6 @@ exports.createCategory = asyncHandler(async (req, res) => {
   });
 });
 
-// Get all categories
 exports.getCategories = asyncHandler(async (req, res) => {
   const categories = await prisma.category.findMany({
     orderBy: { name: "asc" }
@@ -177,7 +190,6 @@ exports.getCategories = asyncHandler(async (req, res) => {
   });
 });
 
-// Delete category
 exports.deleteCategory = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
@@ -195,7 +207,7 @@ exports.deleteCategory = asyncHandler(async (req, res) => {
 });
 
 // ==========================================
-// 4. SYSTEM METRICS / OVERVIEW
+// 4. METRICS & ANALYTICS OVERVIEW
 // ==========================================
 
 exports.getAdminMetrics = asyncHandler(async (req, res) => {
