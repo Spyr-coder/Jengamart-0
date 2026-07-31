@@ -48,7 +48,8 @@ app.get("/", (req, res) => {
 });
 
 // Admin Moderation & Management routes
-if (adminRoutes && typeof adminRoutes === "function") {
+// Fixed check so Express router objects mount cleanly
+if (adminRoutes) {
   app.use("/api/v1/admin", adminRoutes);
 }
 

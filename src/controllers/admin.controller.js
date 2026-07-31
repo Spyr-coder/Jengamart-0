@@ -1,6 +1,44 @@
+const jwt = require("jsonwebtoken");
 const prisma = require("../config/prisma");
 const asyncHandler = require("../utils/asyncHandler");
 const ApiError = require("../utils/apiError");
+
+// ==========================================
+// 0. ADMIN AUTHENTICATION
+// ==========================================
+
+// Verify admin key against environment variable and issue JWT
+exports.adminLogin = asyncHandler(async (req, res) => {
+  const { adminKey } = req.body;
+
+  if (!adminKey) {
+    throw new ApiError(400, "Admin key is required");
+  }
+
+  const expectedKey = process.env.ADMIN_KEY;
+
+  if (!expectedKey) {
+    console.error("❌ ADMIN_KEY environment variable is missing on server.");
+    throw new ApiError(500, "Server configuration error: ADMIN_KEY not set");
+  }
+
+  if (adminKey.trim() !== expectedKey.trim()) {
+    throw new ApiError(401, "Invalid admin key");
+  }
+
+  // Issue a signed 8-hour session token
+  const token = jwt.sign(
+    { role: "admin" },
+    process.env.JWT_SECRET || "default_jwt_secret",
+    { expiresIn: "8h" }
+  );
+
+  res.status(200).json({
+    success: true,
+    message: "Admin access granted",
+    token
+  });
+});
 
 // ==========================================
 // 1. PRODUCT MODERATION
