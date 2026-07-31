@@ -5,18 +5,33 @@ const prisma = require("../config/prisma");
  */
 exports.createInAppNotification = async ({ userId, orderId, title, message }) => {
   try {
-    if (!userId) return;
-    
-    await prisma.notification.create({
-      data: {
-        userId,
-        orderId: orderId || null,
-        title,
-        message
-      }
-    });
+    if (!userId) {
+      console.warn("⚠️ [Notification Service] Skipped: 'userId' is required.");
+      return null;
+    }
+
+    // Guard against undefined Prisma model if schema hasn't migrated 'notification'
+    if (!prisma.notification) {
+      console.warn("⚠️ [Notification Service] Skipped: 'notification' model does not exist on Prisma client.");
+      return null;
+    }
+
+    const data = {
+      userId,
+      title: title || "Order Update",
+      message: message || "",
+    };
+
+    if (orderId) {
+      data.orderId = orderId;
+    }
+
+    const notification = await prisma.notification.create({ data });
+    return notification;
   } catch (error) {
-    console.error("Failed to create in-app notification:", error.message);
+    // Non-blocking error handling to ensure order processing isn't interrupted
+    console.error("❌ [Notification Service Error]:", error.message);
+    return null;
   }
 };
 
@@ -30,8 +45,9 @@ exports.sendPaymentNotification = async (payload) => {
   // Completely bypass payment & payout notifications during MVP
   if (!isPaymentEnabled) {
     console.log("ℹ️ Payment notifications bypassed (ENABLE_PAYMENTS=false)");
-    return;
+    return null;
   }
 
   // Future phase payment/payout notification logic lives here
+  return true;
 };
