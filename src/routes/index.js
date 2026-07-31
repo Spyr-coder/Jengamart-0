@@ -1,46 +1,39 @@
 const express = require("express");
 const router = express.Router();
 
-const authRoutes = require("./auth.routes");
-const productRoutes = require("./product.routes");
-const paymentRoutes = require("./payment.routes");
-const adminOrderRoutes = require("./admin.order.routes");
-const aiRoutes = require("./aiRoutes"); // 👈 Imported your new AI routes here
+// Safe import utility to prevent undefined router crashes
+const safeRequire = (path) => {
+  try {
+    const route = require(path);
+    if (typeof route === "function" || (route && route.stack)) {
+      return route;
+    }
+    console.warn(`[WARN] Route file ${path} did not export an express.Router()`);
+    return null;
+  } catch (e) {
+    console.warn(`[WARN] Could not load route module ${path}:`, e.message);
+    return null;
+  }
+};
 
-// If you created these later, keep them; if not, comment them out
-let cartRoutes, orderRoutes;
-try {
-  cartRoutes = require("./cart.routes");
-} catch (e) {
-  cartRoutes = null;
-}
-try {
-  orderRoutes = require("./order.routes");
-} catch (e) {
-  orderRoutes = null;
-}
+const authRoutes = safeRequire("./auth.routes");
+const productRoutes = safeRequire("./product.routes");
+const paymentRoutes = safeRequire("./payment.routes");
+const adminOrderRoutes = safeRequire("./admin.order.routes");
+const aiRoutes = safeRequire("./aiRoutes");
+const cartRoutes = safeRequire("./cart.routes");
+const orderRoutes = safeRequire("./order.routes");
 
 router.get("/health", (req, res) => {
   res.status(200).json({ success: true, message: "FundiMart API running" });
 });
 
-// Debug prints (TEMPORARY) — helps confirm exports are correct
-console.log("authRoutes type:", typeof authRoutes);
-console.log("productRoutes type:", typeof productRoutes);
-console.log("aiRoutes type:", typeof aiRoutes); // 👈 Added debug check for AI routes
-if (cartRoutes) console.log("cartRoutes type:", typeof cartRoutes);
-if (orderRoutes) console.log("orderRoutes type:", typeof orderRoutes);
-
-router.use("/auth", authRoutes);
-router.use("/products", productRoutes);
-
+if (authRoutes) router.use("/auth", authRoutes);
+if (productRoutes) router.use("/products", productRoutes);
 if (cartRoutes) router.use("/cart", cartRoutes);
 if (orderRoutes) router.use("/orders", orderRoutes);
-
-router.use("/payments", paymentRoutes);
-router.use("/admin/orders", adminOrderRoutes);
-
-// Mount the AI Assistant endpoints under /api/ai
-router.use("/ai", aiRoutes); // 👈 Registered the AI router here
+if (paymentRoutes) router.use("/payments", paymentRoutes);
+if (adminOrderRoutes) router.use("/admin/orders", adminOrderRoutes);
+if (aiRoutes) router.use("/ai", aiRoutes);
 
 module.exports = router;

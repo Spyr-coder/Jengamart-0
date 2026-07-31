@@ -22,13 +22,10 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (Postman, curl, mobile apps, server-to-server)
       if (!origin) return callback(null, true);
-
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-
       return callback(new Error(`CORS not allowed for this origin: ${origin}`));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], 
@@ -51,7 +48,9 @@ app.get("/", (req, res) => {
 });
 
 // Admin Moderation & Management routes
-app.use("/api/v1/admin", adminRoutes);
+if (adminRoutes && typeof adminRoutes === "function") {
+  app.use("/api/v1/admin", adminRoutes);
+}
 
 // General API routes
 app.use("/api", routes);
