@@ -16,6 +16,8 @@ const allowedOrigins = [
   "http://localhost:5000",
   "http://127.0.0.1:5000",
   "https://kusaawards2026.org",
+  "https://www.kusaawards2026.org",
+  "https://fundimart.netlify.app", // Added Netlify frontend domain
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
@@ -34,7 +36,10 @@ app.use(
   })
 );
 
-app.use(express.json());
+// Increased body limits to prevent 413 Payload Too Large errors on checkout
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
+
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
 swaggerSetup(app);
