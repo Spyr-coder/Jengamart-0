@@ -7,6 +7,15 @@ const ApiError = require("../utils/apiError");
 // 0. ADMIN AUTHENTICATION
 // ==========================================
 
+// Helper function to sanitize environment keys and input strings
+const sanitizeKey = (key) => {
+  if (!key) return "";
+  return String(key)
+    .trim()
+    .replace(/^["']|["']$/g, "") // Strip leading and trailing quotes
+    .replace(/\s+/g, "");        // Remove any internal spaces/newlines
+};
+
 // Verify admin key against environment variable and issue JWT
 exports.adminLogin = asyncHandler(async (req, res) => {
   const { adminKey } = req.body;
@@ -15,16 +24,25 @@ exports.adminLogin = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Admin key is required");
   }
 
-  const expectedKey = process.env.ADMIN_KEY;
+  const rawExpectedKey = process.env.ADMIN_KEY;
 
-  if (!expectedKey) {
+  if (!rawExpectedKey) {
     console.error("❌ ADMIN_KEY environment variable is missing on server.");
     throw new ApiError(500, "Server configuration error: ADMIN_KEY not set");
   }
 
-  if (adminKey.trim() !== expectedKey.trim()) {
+  const sanitizedExpected = sanitizeKey(rawExpectedKey);
+  const sanitizedInput = sanitizeKey(adminKey);
+
+  // Safe server logging for debugging key mismatches
+  if (sanitizedInput !== sanitizedExpected) {
+    console.warn(
+      `⚠️ Admin Login Failed | Input Len: ${sanitizedInput.length} | Expected Len: ${sanitizedExpected.length}`
+    );
     throw new ApiError(401, "Invalid admin key");
   }
+
+  console.log("✅ Admin key verified successfully.");
 
   // Issue a signed 8-hour session token
   const token = jwt.sign(
