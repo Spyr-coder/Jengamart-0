@@ -46,7 +46,7 @@ exports.register = asyncHandler(async (req, res) => {
   const allowedRoles = ["customer", "seller", "admin"];
   const assignedRole = allowedRoles.includes(normalizedRole) ? normalizedRole : "customer";
 
-  // Create user record in DB
+  // Create user record in DB with nested Seller record if role is seller
   const user = await prisma.user.create({
     data: {
       name,
@@ -57,6 +57,19 @@ exports.register = asyncHandler(async (req, res) => {
       role: assignedRole,
       county: county || null,
       town: town || null,
+      ...(assignedRole === "seller" && {
+        seller: {
+          create: {
+            hardwareName: hardwareName || `${name}'s Hardware`,
+            location: town || county || "Nairobi",
+            firmEmail: firmEmail || email,
+            isVerified: true
+          }
+        }
+      })
+    },
+    include: {
+      seller: true
     }
   });
 
@@ -74,7 +87,8 @@ exports.register = asyncHandler(async (req, res) => {
       phoneNumber: user.phoneNumber,
       whatsappNumber: user.whatsappNumber,
       county: user.county,
-      town: user.town
+      town: user.town,
+      seller: user.seller || null
     }
   });
 });
@@ -89,7 +103,11 @@ exports.login = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Email and password required");
   }
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({ 
+    where: { email },
+    include: { seller: true } 
+  });
+  
   if (!user) {
     throw new ApiError(401, "Invalid credentials");
   }
@@ -112,7 +130,8 @@ exports.login = asyncHandler(async (req, res) => {
       phoneNumber: user.phoneNumber,
       whatsappNumber: user.whatsappNumber,
       county: user.county,
-      town: user.town
+      town: user.town,
+      seller: user.seller || null
     }
   });
 });
