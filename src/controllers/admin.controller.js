@@ -3,6 +3,13 @@ const prisma = require("../config/prisma");
 const asyncHandler = require("../utils/asyncHandler");
 const ApiError = require("../utils/apiError");
 
+// Set no-cache headers on admin responses to prevent mobile caching discrepancies
+const setNoCacheHeaders = (res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+};
+
 // ==========================================
 // 0. HELPER FUNCTIONS & AUTHENTICATION
 // ==========================================
@@ -61,6 +68,7 @@ exports.adminLogin = asyncHandler(async (req, res) => {
 
 // Get ALL products (Approved, Pending, Rejected) for Admin Management Table
 exports.getAllProducts = asyncHandler(async (req, res) => {
+  setNoCacheHeaders(res);
   const products = await prisma.product.findMany({
     include: {
       category: true,
@@ -80,6 +88,7 @@ exports.getAllProducts = asyncHandler(async (req, res) => {
 
 // Get pending products for moderation
 exports.getPendingProducts = asyncHandler(async (req, res) => {
+  setNoCacheHeaders(res);
   const products = await prisma.product.findMany({
     where: { status: "PENDING" },
     include: {
@@ -128,6 +137,7 @@ exports.moderateProduct = asyncHandler(async (req, res) => {
 // ==========================================
 
 exports.getAllUsers = asyncHandler(async (req, res) => {
+  setNoCacheHeaders(res);
   const users = await prisma.user.findMany({
     select: {
       id: true,
@@ -179,6 +189,7 @@ exports.createCategory = asyncHandler(async (req, res) => {
 });
 
 exports.getCategories = asyncHandler(async (req, res) => {
+  setNoCacheHeaders(res);
   const categories = await prisma.category.findMany({
     orderBy: { name: "asc" }
   });
@@ -211,11 +222,12 @@ exports.deleteCategory = asyncHandler(async (req, res) => {
 // ==========================================
 
 exports.getAdminMetrics = asyncHandler(async (req, res) => {
+  setNoCacheHeaders(res);
   const [totalUsers, totalSellers, totalOrders, totalProducts, pendingProducts, reportedIssues] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { role: "seller" } }),
     prisma.order.count(),
-    prisma.product.count(),
+    prisma.product.count(), // Counts all products in system regardless of status
     prisma.product.count({ where: { status: "PENDING" } }),
     prisma.order.count({ where: { issueReported: true } })
   ]);

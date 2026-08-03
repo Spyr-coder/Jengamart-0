@@ -49,13 +49,11 @@ exports.getProducts = asyncHandler(async (req, res) => {
     };
   }
 
-  // If the requester is authenticated as an admin, respect their status query parameter.
-  // Otherwise, strictly force "APPROVED" status.
-  if (req.user && req.user.role === "admin") {
-    if (status) {
-      where.status = status;
-    }
-  } else {
+  // If status parameter is explicitly requested, respect it; otherwise filter accordingly
+  if (status) {
+    where.status = status;
+  } else if (!req.user || req.user.role !== "admin") {
+    // Non-admin requests default strictly to APPROVED
     where.status = "APPROVED";
   }
 

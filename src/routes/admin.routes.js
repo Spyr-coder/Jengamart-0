@@ -5,6 +5,14 @@ const protect = require("../middlewares/auth.middleware");
 const adminOnly = require("../middlewares/admin.middleware");
 const adminController = require("../controllers/admin.controller");
 
+// Middleware to prevent mobile browser API caching on all admin endpoints
+router.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
+
 // ==========================================
 // 1. PUBLIC ADMIN ROUTES
 // ==========================================
