@@ -18,7 +18,9 @@ exports.register = asyncHandler(async (req, res) => {
     whatsappNumber, 
     role, 
     county, 
-    town 
+    town,
+    hardwareName,
+    firmEmail 
   } = req.body;
 
   // Accept either 'phoneNumber' or 'phone' from payload
@@ -39,8 +41,10 @@ exports.register = asyncHandler(async (req, res) => {
   // Hash password
   const hashedPassword = await hashPassword(password);
 
-  // Validate allowed roles (defaults to 'customer' if omitted or invalid)
-  const assignedRole = role && ["customer", "seller", "admin"].includes(role) ? role : "customer";
+  // Normalize role parameter (handle uppercase/lowercase strings)
+  const normalizedRole = typeof role === "string" ? role.toLowerCase().trim() : "";
+  const allowedRoles = ["customer", "seller", "admin"];
+  const assignedRole = allowedRoles.includes(normalizedRole) ? normalizedRole : "customer";
 
   // Create user record in DB
   const user = await prisma.user.create({
@@ -52,7 +56,7 @@ exports.register = asyncHandler(async (req, res) => {
       whatsappNumber: finalWhatsapp,
       role: assignedRole,
       county: county || null,
-      town: town || null
+      town: town || null,
     }
   });
 
