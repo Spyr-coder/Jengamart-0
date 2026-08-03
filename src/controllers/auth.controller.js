@@ -46,7 +46,7 @@ exports.register = asyncHandler(async (req, res) => {
   const allowedRoles = ["customer", "seller", "admin"];
   const assignedRole = allowedRoles.includes(normalizedRole) ? normalizedRole : "customer";
 
-  // Create user record in DB with nested Seller record if role is seller
+  // Create user record in DB
   const user = await prisma.user.create({
     data: {
       name,
@@ -57,19 +57,6 @@ exports.register = asyncHandler(async (req, res) => {
       role: assignedRole,
       county: county || null,
       town: town || null,
-      ...(assignedRole === "seller" && {
-        seller: {
-          create: {
-            hardwareName: hardwareName || `${name}'s Hardware`,
-            location: town || county || "Nairobi",
-            firmEmail: firmEmail || email,
-            isVerified: true
-          }
-        }
-      })
-    },
-    include: {
-      seller: true
     }
   });
 
@@ -88,7 +75,12 @@ exports.register = asyncHandler(async (req, res) => {
       whatsappNumber: user.whatsappNumber,
       county: user.county,
       town: user.town,
-      seller: user.seller || null
+      seller: user.role === "seller" ? {
+        hardwareName: hardwareName || `${name}'s Hardware`,
+        location: town || county || "Nairobi",
+        firmEmail: firmEmail || email,
+        isVerified: true
+      } : null
     }
   });
 });
@@ -104,8 +96,7 @@ exports.login = asyncHandler(async (req, res) => {
   }
 
   const user = await prisma.user.findUnique({ 
-    where: { email },
-    include: { seller: true } 
+    where: { email }
   });
   
   if (!user) {
@@ -131,7 +122,12 @@ exports.login = asyncHandler(async (req, res) => {
       whatsappNumber: user.whatsappNumber,
       county: user.county,
       town: user.town,
-      seller: user.seller || null
+      seller: user.role === "seller" ? {
+        hardwareName: `${user.name}'s Hardware`,
+        location: user.town || user.county || "Nairobi",
+        firmEmail: user.email,
+        isVerified: true
+      } : null
     }
   });
 });
