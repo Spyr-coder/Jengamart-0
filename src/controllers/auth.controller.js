@@ -41,10 +41,16 @@ exports.register = asyncHandler(async (req, res) => {
   // Hash password
   const hashedPassword = await hashPassword(password);
 
-  // Normalize role parameter (handle uppercase/lowercase strings)
+  // Normalize role parameter and infer seller role if hardware/location details are present
   const normalizedRole = typeof role === "string" ? role.toLowerCase().trim() : "";
   const allowedRoles = ["customer", "seller", "admin"];
-  const assignedRole = allowedRoles.includes(normalizedRole) ? normalizedRole : "customer";
+  
+  let assignedRole = "customer";
+  if (allowedRoles.includes(normalizedRole)) {
+    assignedRole = normalizedRole;
+  } else if (hardwareName || firmEmail || town || county) {
+    assignedRole = "seller";
+  }
 
   // Create user record in DB
   const user = await prisma.user.create({
