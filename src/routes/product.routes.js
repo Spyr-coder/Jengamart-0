@@ -24,20 +24,20 @@ router.get("/:id", productController.getProductById);
 // PROTECTED ROUTES (Requires Logged-In User)
 // ==========================================
 
-// Create a new product (Defaults to PENDING, allowed for sellers/customers and admins)
+// Create a new product (Allowed for sellers, customers, and admins)
 router.post(
   "/",
   protect,
-  authorize("admin", "customer"),
+  authorize("admin", "seller", "customer"),
   validate(createProductSchema),
   productController.createProduct
 );
 
-// Update product details (Resets status to PENDING, allowed for sellers/customers and admins)
+// Update product details (Allowed for sellers, customers, and admins)
 router.put(
   "/:id",
   protect,
-  authorize("admin", "customer"),
+  authorize("admin", "seller", "customer"),
   validate(updateProductSchema),
   productController.updateProduct
 );
