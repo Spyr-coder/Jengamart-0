@@ -2,13 +2,16 @@ const prisma = require("../config/prisma");
 const asyncHandler = require("../utils/asyncHandler");
 const ApiError = require("../utils/apiError");
 
-// Create product (Defaults to PENDING status)
+// Create product (Defaults to PENDING status and links to authenticated seller)
 exports.createProduct = asyncHandler(async (req, res) => {
   const { name, price, unit, stock, category, description } = req.body;
 
   if (!name || price == null || !unit || stock == null) {
     throw new ApiError(400, "Required fields missing");
   }
+
+  // Extract authenticated seller ID from req.user
+  const sellerId = req.user ? req.user.id : null;
 
   const product = await prisma.product.create({
     data: {
@@ -18,7 +21,8 @@ exports.createProduct = asyncHandler(async (req, res) => {
       stock: Number(stock),
       category: category || "general",
       description: description || "",
-      status: "PENDING"
+      status: "PENDING",
+      sellerId
     }
   });
 
@@ -63,6 +67,17 @@ exports.getProducts = asyncHandler(async (req, res) => {
     take: Number(limit),
     orderBy: {
       createdAt: "desc"
+    },
+    include: {
+      seller: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phoneNumber: true,
+          whatsappNumber: true
+        }
+      }
     }
   });
 
@@ -83,7 +98,18 @@ exports.getProducts = asyncHandler(async (req, res) => {
 // Get single product (Prevents unapproved direct link traversal by public users)
 exports.getProductById = asyncHandler(async (req, res) => {
   const product = await prisma.product.findUnique({
-    where: { id: req.params.id }
+    where: { id: req.params.id },
+    include: {
+      seller: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phoneNumber: true,
+          whatsappNumber: true
+        }
+      }
+    }
   });
 
   if (!product) {
@@ -93,7 +119,8 @@ exports.getProductById = asyncHandler(async (req, res) => {
   // Prevent customer access if product is not approved
   if (product.status !== "APPROVED") {
     const isAdmin = req.user && req.user.role === "admin";
-    if (!isAdmin) {
+    const isOwner = req.user && req.user.id === product.sellerId;
+    if (!isAdmin && !isOwner) {
       throw new ApiError(403, "This product is pending administrative approval");
     }
   }
@@ -112,6 +139,11 @@ exports.updateProduct = asyncHandler(async (req, res) => {
 
   if (!existing) {
     throw new ApiError(404, "Product not found");
+  }
+
+  // Check ownership unless admin
+  if (req.user && req.user.role !== "admin" && existing.sellerId !== req.user.id) {
+    throw new ApiError(403, "You do not have permission to update this product");
   }
 
   const { name, price, unit, stock, category, description } = req.body;
@@ -163,7 +195,7 @@ exports.updateProductStatus = asyncHandler(async (req, res) => {
   });
 });
 
-// Delete product (Admin)
+// Delete product
 exports.deleteProduct = asyncHandler(async (req, res) => {
   const existing = await prisma.product.findUnique({
     where: { id: req.params.id }
@@ -171,6 +203,11 @@ exports.deleteProduct = asyncHandler(async (req, res) => {
 
   if (!existing) {
     throw new ApiError(404, "Product not found");
+  }
+
+  // Allow deletion if admin or item owner
+  if (req.user && req.user.role !== "admin" && existing.sellerId !== req.user.id) {
+    throw new ApiError(403, "You do not have permission to delete this product");
   }
 
   await prisma.product.delete({
