@@ -32,7 +32,7 @@ exports.createProduct = asyncHandler(async (req, res) => {
   });
 });
 
-// Get all products (Filters so customers only see APPROVED listings by default)
+// Get all products (Filters so customers only see APPROVED listings by default unless status=ALL or admin)
 exports.getProducts = asyncHandler(async (req, res) => {
   const { search, category, status, page = 1, limit = 10 } = req.query;
 
@@ -53,11 +53,13 @@ exports.getProducts = asyncHandler(async (req, res) => {
     };
   }
 
-  // If status parameter is explicitly requested, respect it; otherwise filter accordingly
-  if (status) {
+  // Handle status filter
+  if (status === "ALL" || (!status && req.user && req.user.role === "admin")) {
+    // Return all statuses without adding where.status filter
+  } else if (status) {
     where.status = status;
   } else if (!req.user || req.user.role !== "admin") {
-    // Non-admin requests default strictly to APPROVED
+    // Non-admin public catalog defaults strictly to APPROVED
     where.status = "APPROVED";
   }
 
