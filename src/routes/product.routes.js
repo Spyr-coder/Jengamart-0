@@ -14,17 +14,20 @@ const {
 // PUBLIC ROUTES
 // ==========================================
 
-// Get all products (Customers only see APPROVED, Admins see all)
+// 1. Get all products catalog
 router.get("/", productController.getProducts);
 
-// Get a single product by ID (Unapproved products are restricted to Admins)
+// 2. Get featured hardware material listings (MUST BE PLACED BEFORE /:id)
+router.get("/featured", productController.getFeaturedProducts);
+
+// 3. Get single product by ID (Catches dynamic IDs)
 router.get("/:id", productController.getProductById);
 
 // ==========================================
 // PROTECTED ROUTES (Requires Logged-In User)
 // ==========================================
 
-// Create a new product (Allowed for sellers, customers, and admins)
+// Create a new product
 router.post(
   "/",
   protect,
@@ -33,7 +36,7 @@ router.post(
   productController.createProduct
 );
 
-// Update product details (Allowed for sellers, customers, and admins)
+// Update product details
 router.put(
   "/:id",
   protect,
@@ -46,7 +49,7 @@ router.put(
 // ADMIN ONLY ROUTES
 // ==========================================
 
-// Approve or Reject a product status (Expects { "status": "APPROVED" | "REJECTED" | "PENDING" })
+// Approve or Reject product status
 router.patch(
   "/:id/status",
   protect,
@@ -54,7 +57,7 @@ router.patch(
   productController.updateProductStatus
 );
 
-// Delete a product permanently
+// Delete product permanently
 router.delete(
   "/:id",
   protect,

@@ -152,6 +152,39 @@ exports.getProducts = asyncHandler(async (req, res) => {
   });
 });
 
+// Get featured products for homepage
+exports.getFeaturedProducts = asyncHandler(async (req, res) => {
+  const limit = Number(req.query.limit) || 12;
+
+  const products = await prisma.product.findMany({
+    where: {
+      status: "APPROVED",
+    },
+    take: limit,
+    orderBy: {
+      createdAt: "desc",
+    },
+    include: {
+      seller: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phoneNumber: true,
+          whatsappNumber: true,
+        },
+      },
+    },
+  });
+
+  const formattedProducts = products.map(formatProductResponse);
+
+  res.status(200).json({
+    success: true,
+    data: formattedProducts,
+  });
+});
+
 // Get single product (Prevents unapproved direct link traversal by public users)
 exports.getProductById = asyncHandler(async (req, res) => {
   const product = await prisma.product.findUnique({
