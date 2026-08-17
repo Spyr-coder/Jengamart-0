@@ -3,34 +3,47 @@ const asyncHandler = require("../utils/asyncHandler");
 const ApiError = require("../utils/apiError");
 
 // Helper function to extract and normalize image URLs safely
-const extractImages = (imagesData, description) => {
-  if (Array.isArray(imagesData) && imagesData.length > 0) {
-    return imagesData;
+const extractImages = (product) => {
+  // 1. Check direct database fields (`photos` or `image`)
+  if (Array.isArray(product.photos) && product.photos.length > 0) {
+    return product.photos;
   }
-  if (typeof imagesData === "string" && imagesData.trim() !== "") {
+  if (product.image && typeof product.image === "string" && product.image.trim() !== "") {
+    return [product.image];
+  }
+
+  // 2. Fallback to `images` property if attached to object
+  if (Array.isArray(product.images) && product.images.length > 0) {
+    return product.images;
+  }
+
+  // 3. Fallback: Parse from stringified array
+  if (typeof product.photos === "string" && product.photos.trim() !== "") {
     try {
-      const parsed = JSON.parse(imagesData);
+      const parsed = JSON.parse(product.photos);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     } catch {
-      return [imagesData];
+      return [product.photos];
     }
   }
-  // Try parsing from serialized metadata inside description if standard array is absent
-  if (description && description.includes("__IMAGES__:")) {
+
+  // 4. Fallback: Parse from serialized metadata inside description for legacy data
+  if (product.description && product.description.includes("__IMAGES__:")) {
     try {
-      const parts = description.split("__IMAGES__:");
+      const parts = product.description.split("__IMAGES__:");
       const parsed = JSON.parse(parts[1]);
       if (Array.isArray(parsed)) return parsed;
     } catch {
       // Fallback if parsing fails
     }
   }
+
   return [];
 };
 
 // Helper function to format outgoing product object for frontend compatibility
 const formatProductResponse = (product) => {
-  const images = extractImages(product.images || product.photos, product.description);
+  const images = extractImages(product);
   const cleanDescription = product.description
     ? product.description.split("__IMAGES__:")[0].trim()
     : "";
@@ -40,13 +53,13 @@ const formatProductResponse = (product) => {
     description: cleanDescription,
     images: images,
     photos: images,
-    image: images[0] || null,
+    image: images[0] || product.image || null,
   };
 };
 
-// Create product (Defaults to PENDING status and links to authenticated seller)
+// Create product (Defaults status and links to authenticated seller)
 exports.createProduct = asyncHandler(async (req, res) => {
-  const { name, price, unit, stock, category, description, images, photos } = req.body;
+  const { name, price, unit, stock, category, description, images, photos, image, status } = req.body;
   if (!name || price == null || !unit || stock == null) {
     throw new ApiError(400, "Required fields missing");
   }
@@ -54,19 +67,24 @@ exports.createProduct = asyncHandler(async (req, res) => {
   // Extract authenticated seller ID from req.user
   const sellerId = req.user ? req.user.id : null;
 
-  // Combine image URLs from either `images` or `photos` key
-  const inputImages = images || photos || [];
-  const normalizedImages = Array.isArray(inputImages)
-    ? inputImages
-    : typeof inputImages === "string"
-    ? [inputImages]
-    : [];
+  // Combine image URLs from req.files (Multer upload), req.body.photos, req.body.images, or req.body.image
+  let normalizedImages = [];
 
-  // Embed image metadata gracefully into description if images were passed
-  let finalDescription = description || "";
-  if (normalizedImages.length > 0) {
-    finalDescription = `${finalDescription} __IMAGES__:${JSON.stringify(normalizedImages)}`;
+  if (req.files && Array.isArray(req.files) && req.files.length > 0) {
+    normalizedImages = req.files.map((file) => file.path || file.location || `/uploads/${file.filename}`);
+  } else {
+    const inputImages = photos || images || (image ? [image] : []);
+    normalizedImages = Array.isArray(inputImages)
+      ? inputImages
+      : typeof inputImages === "string"
+      ? [inputImages]
+      : [];
   }
+
+  let finalDescription = description || "";
+
+  // Set default status. Admins can pass status directly; sellers default to APPROVED (or PENDING if moderation is enabled)
+  const initialStatus = status || "APPROVED";
 
   const product = await prisma.product.create({
     data: {
@@ -76,7 +94,9 @@ exports.createProduct = asyncHandler(async (req, res) => {
       stock: Number(stock),
       category: category || "general",
       description: finalDescription,
-      status: "PENDING",
+      photos: normalizedImages,
+      image: normalizedImages[0] || null,
+      status: initialStatus,
       sellerId,
     },
   });
@@ -221,7 +241,7 @@ exports.getProductById = asyncHandler(async (req, res) => {
   });
 });
 
-// Update product details (Resets status back to PENDING for review)
+// Update product details
 exports.updateProduct = asyncHandler(async (req, res) => {
   const existing = await prisma.product.findUnique({
     where: { id: req.params.id },
@@ -236,23 +256,23 @@ exports.updateProduct = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You do not have permission to update this product");
   }
 
-  const { name, price, unit, stock, category, description, images, photos } = req.body;
+  const { name, price, unit, stock, category, description, images, photos, image, status } = req.body;
 
   let updatedDescription = description !== undefined ? description : existing.description.split("__IMAGES__:")[0].trim();
-  const inputImages = images || photos;
+  
+  let normalizedImages = existing.photos || [];
 
-  if (inputImages) {
-    const normalizedImages = Array.isArray(inputImages)
-      ? inputImages
-      : typeof inputImages === "string"
-      ? [inputImages]
-      : [];
-    if (normalizedImages.length > 0) {
-      updatedDescription = `${updatedDescription} __IMAGES__:${JSON.stringify(normalizedImages)}`;
+  if (req.files && Array.isArray(req.files) && req.files.length > 0) {
+    normalizedImages = req.files.map((file) => file.path || file.location || `/uploads/${file.filename}`);
+  } else {
+    const inputImages = photos || images || (image ? [image] : null);
+    if (inputImages) {
+      normalizedImages = Array.isArray(inputImages)
+        ? inputImages
+        : typeof inputImages === "string"
+        ? [inputImages]
+        : [];
     }
-  } else if (existing.description.includes("__IMAGES__:")) {
-    const imagePart = existing.description.split("__IMAGES__:")[1];
-    updatedDescription = `${updatedDescription} __IMAGES__:${imagePart}`;
   }
 
   const product = await prisma.product.update({
@@ -264,7 +284,9 @@ exports.updateProduct = asyncHandler(async (req, res) => {
       ...(stock !== undefined && { stock: Number(stock) }),
       ...(category !== undefined && { category }),
       description: updatedDescription,
-      status: "PENDING", // Reset to PENDING so modified listings are checked again
+      photos: normalizedImages,
+      image: normalizedImages[0] || null,
+      ...(status !== undefined ? { status } : { status: existing.status }),
     },
   });
 

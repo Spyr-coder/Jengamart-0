@@ -10,6 +10,18 @@ const {
   updateProductSchema
 } = require("../validators/product.validator");
 
+// Optional: If you use multer for file uploads, handle multipart form-data
+// If handling URL strings directly, express.json() in app.js handles it.
+let upload;
+try {
+  const multer = require("multer");
+  const storage = multer.diskStorage({});
+  upload = multer({ storage });
+} catch (e) {
+  // Multer fallback if not installed
+  upload = { array: () => (req, res, next) => next() };
+}
+
 // ==========================================
 // PUBLIC ROUTES
 // ==========================================
@@ -27,11 +39,12 @@ router.get("/:id", productController.getProductById);
 // PROTECTED ROUTES (Requires Logged-In User)
 // ==========================================
 
-// Create a new product
+// Create a new product (handles image array / payload parsing)
 router.post(
   "/",
   protect,
   authorize("admin", "seller", "customer"),
+  upload.array("photos", 5),
   validate(createProductSchema),
   productController.createProduct
 );
@@ -41,6 +54,7 @@ router.put(
   "/:id",
   protect,
   authorize("admin", "seller", "customer"),
+  upload.array("photos", 5),
   validate(updateProductSchema),
   productController.updateProduct
 );
