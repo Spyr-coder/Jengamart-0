@@ -4,20 +4,15 @@ const ApiError = require("../utils/apiError");
 
 // Helper function to extract and normalize image URLs safely
 const extractImages = (product) => {
-  // 1. Check direct database fields (`photos` or `image`)
   if (Array.isArray(product.photos) && product.photos.length > 0) {
     return product.photos;
   }
   if (product.image && typeof product.image === "string" && product.image.trim() !== "") {
     return [product.image];
   }
-
-  // 2. Fallback to `images` property if attached to object
   if (Array.isArray(product.images) && product.images.length > 0) {
     return product.images;
   }
-
-  // 3. Fallback: Parse from stringified array
   if (typeof product.photos === "string" && product.photos.trim() !== "") {
     try {
       const parsed = JSON.parse(product.photos);
@@ -26,8 +21,6 @@ const extractImages = (product) => {
       return [product.photos];
     }
   }
-
-  // 4. Fallback: Parse from serialized metadata inside description for legacy data
   if (product.description && product.description.includes("__IMAGES__:")) {
     try {
       const parts = product.description.split("__IMAGES__:");
@@ -37,7 +30,6 @@ const extractImages = (product) => {
       // Fallback if parsing fails
     }
   }
-
   return [];
 };
 
@@ -64,10 +56,8 @@ exports.createProduct = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Required fields missing");
   }
 
-  // Extract authenticated seller ID from req.user
   const sellerId = req.user ? req.user.id : null;
 
-  // Combine image URLs from req.files (Multer upload), req.body.photos, req.body.images, or req.body.image
   let normalizedImages = [];
 
   if (req.files && Array.isArray(req.files) && req.files.length > 0) {
@@ -83,7 +73,6 @@ exports.createProduct = asyncHandler(async (req, res) => {
 
   let finalDescription = description || "";
 
-  // Set default status. Admins can pass status directly; sellers default to APPROVED (or PENDING if moderation is enabled)
   const initialStatus = status || "APPROVED";
 
   const product = await prisma.product.create({
@@ -107,7 +96,7 @@ exports.createProduct = asyncHandler(async (req, res) => {
   });
 });
 
-// Get all products (Filters so customers only see APPROVED listings by default unless status=ALL or admin)
+// Get all products
 exports.getProducts = asyncHandler(async (req, res) => {
   const { search, category, status, page = 1, limit = 10 } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
@@ -127,13 +116,11 @@ exports.getProducts = asyncHandler(async (req, res) => {
     };
   }
 
-  // Handle status filter
   if (status === "ALL" || (!status && req.user && req.user.role === "admin")) {
     // Return all statuses without adding where.status filter
   } else if (status) {
     where.status = status;
   } else if (!req.user || req.user.role !== "admin") {
-    // Non-admin public catalog defaults strictly to APPROVED
     where.status = "APPROVED";
   }
 
@@ -205,7 +192,7 @@ exports.getFeaturedProducts = asyncHandler(async (req, res) => {
   });
 });
 
-// Get single product (Prevents unapproved direct link traversal by public users)
+// Get single product
 exports.getProductById = asyncHandler(async (req, res) => {
   const product = await prisma.product.findUnique({
     where: { id: req.params.id },
@@ -226,7 +213,6 @@ exports.getProductById = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Product not found");
   }
 
-  // Prevent customer access if product is not approved
   if (product.status !== "APPROVED") {
     const isAdmin = req.user && req.user.role === "admin";
     const isOwner = req.user && req.user.id === product.sellerId;
@@ -251,7 +237,6 @@ exports.updateProduct = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Product not found");
   }
 
-  // Check ownership unless admin
   if (req.user && req.user.role !== "admin" && existing.sellerId !== req.user.id) {
     throw new ApiError(403, "You do not have permission to update this product");
   }
@@ -296,7 +281,7 @@ exports.updateProduct = asyncHandler(async (req, res) => {
   });
 });
 
-// Update product status (Admin Only - Approve/Reject)
+// Update product status
 exports.updateProductStatus = asyncHandler(async (req, res) => {
   const { status } = req.body;
   if (!status || !["APPROVED", "REJECTED", "PENDING"].includes(status)) {
@@ -333,7 +318,6 @@ exports.deleteProduct = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Product not found");
   }
 
-  // Allow deletion if admin or item owner
   if (req.user && req.user.role !== "admin" && existing.sellerId !== req.user.id) {
     throw new ApiError(403, "You do not have permission to delete this product");
   }
